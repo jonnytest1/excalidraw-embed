@@ -30,13 +30,19 @@ import type {
   DataURL,
 } from "@excalidraw/excalidraw/types";
 
-import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
+import {
+  FILE_CACHE_MAX_AGE_SEC,
+  FILE_UPLOAD_MAX_BYTES,
+} from "../app_constants";
+
+import { encodeFilesForUpload } from "./FileManager";
 
 import { getSyncableElements } from ".";
 
 import type { SyncableExcalidrawElement } from ".";
 import type Portal from "../collab/Portal";
 import type { Socket } from "socket.io-client";
+import type { StorageApi } from "./storage-api";
 
 // private
 // -----------------------------------------------------------------------------
@@ -80,7 +86,7 @@ const _getStorage = () => {
 
 // -----------------------------------------------------------------------------
 
-export const loadFirebaseStorage = async () => {
+const loadFirebaseStorage = async () => {
   return _getStorage();
 };
 
@@ -128,7 +134,7 @@ class FirebaseSceneVersionCache {
   };
 }
 
-export const isSavedToFirebase = (
+const isSavedToFirebase = (
   portal: Portal,
   elements: readonly ExcalidrawElement[],
 ): boolean => {
@@ -142,20 +148,28 @@ export const isSavedToFirebase = (
   return true;
 };
 
-export const saveFilesToFirebase = async ({
+const saveFilesToFirebase = async ({
   prefix,
   files,
+  encryptionKey,
 }: {
   prefix: string;
-  files: { id: FileId; buffer: Uint8Array }[];
+  files: Map<FileId, BinaryFileData>;
+  encryptionKey: string;
 }) => {
+  const filesToUpload = await encodeFilesForUpload({
+    files,
+    encryptionKey,
+    maxBytes: FILE_UPLOAD_MAX_BYTES,
+  });
+
   const storage = await loadFirebaseStorage();
 
   const erroredFiles: FileId[] = [];
   const savedFiles: FileId[] = [];
 
   await Promise.all(
-    files.map(async ({ id, buffer }) => {
+    filesToUpload.map(async ({ id, buffer }) => {
       try {
         const storageRef = ref(storage, `${prefix}/${id}`);
         await uploadBytes(storageRef, buffer, {
@@ -184,7 +198,7 @@ const createFirebaseSceneDocument = async (
   } as FirebaseStoredScene;
 };
 
-export const saveToFirebase = async (
+const saveToFirebase = async (
   portal: Portal,
   elements: readonly SyncableExcalidrawElement[],
   appState: AppState,
@@ -246,7 +260,7 @@ export const saveToFirebase = async (
   return storedElements;
 };
 
-export const loadFromFirebase = async (
+const loadFromFirebase = async (
   roomId: string,
   roomKey: string,
   socket: Socket | null,
@@ -269,7 +283,7 @@ export const loadFromFirebase = async (
   return elements;
 };
 
-export const loadFilesFromFirebase = async (
+const loadFilesFromFirebase = async (
   prefix: string,
   decryptionKey: string,
   filesIds: readonly FileId[],
@@ -315,3 +329,12 @@ export const loadFilesFromFirebase = async (
 
   return { loadedFiles, erroredFiles };
 };
+
+export const firebaseStorageApi = {
+  loadFiles: loadFilesFromFirebase,
+  load: loadFromFirebase,
+  save: saveToFirebase,
+  saveFiles: saveFilesToFirebase,
+  isSaved: isSavedToFirebase,
+  storageApi: loadFirebaseStorage,
+} as StorageApi;

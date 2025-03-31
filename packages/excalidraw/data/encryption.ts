@@ -9,6 +9,27 @@ export const createIV = () => {
   return window.crypto.getRandomValues(arr);
 };
 
+export async function derive(seed: string, target: Uint8Array) {
+  const encoder = new TextEncoder();
+  const seedBuffer = encoder.encode(seed + target.length);
+
+  const hash = await crypto.subtle.digest("SHA-256", seedBuffer);
+  let offset = 0;
+  let buffer = new Uint8Array(hash);
+
+  while (offset < target.length) {
+    // Generate more data by re-hashing the seed and previous result
+    buffer = new Uint8Array(await crypto.subtle.digest("SHA-256", buffer));
+
+    // Calculate how much of the buffer is needed to complete the Uint8Array
+    const bytesToCopy = Math.min(buffer.length, target.length - offset);
+
+    // Copy the necessary bytes into the result array
+    target.set(buffer.subarray(0, bytesToCopy), offset);
+    offset += bytesToCopy;
+  }
+}
+
 export const generateEncryptionKey = async <
   T extends "string" | "cryptoKey" = "string",
 >(

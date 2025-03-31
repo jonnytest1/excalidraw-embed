@@ -74,13 +74,7 @@ import {
   updateStaleImageStatuses,
 } from "../data/FileManager";
 import { LocalData } from "../data/LocalData";
-import {
-  isSavedToFirebase,
-  loadFilesFromFirebase,
-  loadFromFirebase,
-  saveFilesToFirebase,
-  saveToFirebase,
-} from "../data/firebase";
+import { firebaseStorageApi } from "../data/firebase";
 import {
   importUsernameFromLocalStorage,
   saveUsernameToLocalStorage,
@@ -89,6 +83,8 @@ import { resetBrowserStateVersions } from "../data/tabSync";
 
 import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
+
+import { webdavStorageApi } from "./webdav-storage-api";
 
 import type {
   SocketUpdateDataSource,
@@ -129,6 +125,12 @@ interface CollabProps {
   excalidrawAPI: ExcalidrawImperativeAPI;
 }
 
+let storageApi = firebaseStorageApi;
+
+if (import.meta.env.VITE_WEBDAV_STORAGE_API) {
+  storageApi = webdavStorageApi;
+}
+
 class Collab extends PureComponent<CollabProps, CollabState> {
   portal: Portal;
   fileManager: FileManager;
@@ -149,6 +151,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       activeRoomLink: null,
     };
     this.portal = new Portal(this);
+
     this.fileManager = new FileManager({
       getFiles: async (fileIds) => {
         const { roomId, roomKey } = this.portal;
@@ -156,7 +159,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        return loadFilesFromFirebase(`files/rooms/${roomId}`, roomKey, fileIds);
+        return storageApi.loadFiles(`files/rooms/${roomId}`, roomKey, fileIds);
       },
       saveFiles: async ({ addedFiles }) => {
         const { roomId, roomKey } = this.portal;
@@ -164,13 +167,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        const { savedFiles, erroredFiles } = await saveFilesToFirebase({
+        const { savedFiles, erroredFiles } = await storageApi.saveFiles({
           prefix: `${FIREBASE_STORAGE_PREFIXES.collabFiles}/${roomId}`,
-          files: await encodeFilesForUpload({
-            files: addedFiles,
-            encryptionKey: roomKey,
-            maxBytes: FILE_UPLOAD_MAX_BYTES,
-          }),
+          files: addedFiles,
+          encryptionKey: roomKey,
         });
 
         return {
@@ -197,6 +197,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         };
       },
     });
+
     this.excalidrawAPI = props.excalidrawAPI;
     this.activeIntervalId = null;
     this.idleTimeoutId = null;
@@ -295,7 +296,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     if (
       this.isCollaborating() &&
       (this.fileManager.shouldPreventUnload(syncableElements) ||
-        !isSavedToFirebase(this.portal, syncableElements))
+        !storageApi.isSaved(this.portal, syncableElements))
     ) {
       // this won't run in time if user decides to leave the site, but
       //  the purpose is to run in immediately after user decides to stay
@@ -315,7 +316,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
     try {
-      const storedElements = await saveToFirebase(
+      const storedElements = await storageApi.save(
         this.portal,
         syncableElements,
         this.excalidrawAPI.getAppState(),
@@ -714,7 +715,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       this.excalidrawAPI.resetScene();
 
       try {
-        const elements = await loadFromFirebase(
+        const elements = await storageApi.load(
           roomLinkData.roomId,
           roomLinkData.roomKey,
           this.portal.socket,

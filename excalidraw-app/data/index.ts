@@ -4,6 +4,7 @@ import {
 } from "@excalidraw/excalidraw/data/encode";
 import {
   decryptData,
+  derive,
   generateEncryptionKey,
   IV_LENGTH_BYTES,
 } from "@excalidraw/excalidraw/data/encryption";
@@ -12,7 +13,7 @@ import { restore } from "@excalidraw/excalidraw/data/restore";
 import { isInvisiblySmallElement } from "@excalidraw/element/sizeHelpers";
 import { isInitializedImageElement } from "@excalidraw/element/typeChecks";
 import { t } from "@excalidraw/excalidraw/i18n";
-import { bytesToHexString } from "@excalidraw/common";
+import { bytesToHexString, ENCRYPTION_KEY_BITS } from "@excalidraw/common";
 
 import type { UserIdleState } from "@excalidraw/common";
 import type { ImportedDataState } from "@excalidraw/excalidraw/data/types";
@@ -37,7 +38,7 @@ import {
 } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
-import { saveFilesToFirebase } from "./firebase";
+import { firebaseStorageApi } from "./firebase";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -132,12 +133,33 @@ export type SocketUpdateData =
 const RE_COLLAB_LINK = /^#room=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)$/;
 
 export const isCollaborationLink = (link: string) => {
-  const hash = new URL(link).hash;
+  const url = new URL(link);
+  if (url.searchParams.has("file")) {
+    return true;
+  }
+  const hash = url.hash;
   return RE_COLLAB_LINK.test(hash);
 };
 
 export const getCollaborationLinkData = (link: string) => {
-  const hash = new URL(link).hash;
+  const url = new URL(link);
+  if (url.searchParams.has("file")) {
+    const file = url.searchParams.get("file");
+    const buffer = new Uint8Array(ROOM_ID_BYTES);
+    const keyBuffer = new Uint8Array(ENCRYPTION_KEY_BITS / 8);
+    derive(file!, buffer);
+    derive(file!, keyBuffer);
+
+    return {
+      roomId: bytesToHexString(buffer),
+      roomKey: btoa(String.fromCharCode(...keyBuffer)) // Convert to base64
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, ""),
+    };
+  }
+
+  const hash = url.hash;
   const match = hash.match(RE_COLLAB_LINK);
   if (match && match[2].length !== 22) {
     window.alert(t("alerts.invalidEncryptionKey"));
@@ -147,7 +169,26 @@ export const getCollaborationLinkData = (link: string) => {
 };
 
 export const generateCollaborationLinkData = async () => {
+  const url = new URL(location.href);
+  if (url.searchParams.has("file")) {
+    const file = url.searchParams.get("file");
+
+    const buffer = new Uint8Array(ROOM_ID_BYTES);
+    const keyBuffer = new Uint8Array(ENCRYPTION_KEY_BITS / 8);
+    derive(file!, buffer);
+    derive(file!, keyBuffer);
+
+    return {
+      roomId: bytesToHexString(buffer),
+      roomKey: btoa(String.fromCharCode(...keyBuffer)) // Convert to base64
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, ""),
+    };
+  }
+
   const roomId = await generateRoomId();
+
   const roomKey = await generateEncryptionKey();
 
   if (!roomKey) {
@@ -302,15 +343,9 @@ export const exportToBackend = async (
       }
     }
 
-    const filesToUpload = await encodeFilesForUpload({
-      files: filesMap,
-      encryptionKey,
-      maxBytes: FILE_UPLOAD_MAX_BYTES,
-    });
-
     const response = await fetch(BACKEND_V2_POST, {
       method: "POST",
-      body: payload.buffer,
+      body: payload.buffer as any,
     });
     const json = await response.json();
     if (json.id) {
@@ -320,9 +355,10 @@ export const exportToBackend = async (
       url.hash = `json=${json.id},${encryptionKey}`;
       const urlString = url.toString();
 
-      await saveFilesToFirebase({
+      await firebaseStorageApi.saveFiles({
         prefix: `/files/shareLinks/${json.id}`,
-        files: filesToUpload,
+        files: filesMap,
+        encryptionKey,
       });
 
       return { url: urlString, errorMessage: null };

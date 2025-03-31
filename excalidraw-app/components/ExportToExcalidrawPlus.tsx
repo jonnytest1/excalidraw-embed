@@ -1,5 +1,5 @@
 import React from "react";
-import { uploadBytes, ref } from "firebase/storage";
+import { uploadBytes, ref, type FirebaseStorage } from "firebase/storage";
 import { nanoid } from "nanoid";
 
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
@@ -27,7 +27,7 @@ import type {
 
 import { FILE_UPLOAD_MAX_BYTES } from "../app_constants";
 import { encodeFilesForUpload } from "../data/FileManager";
-import { loadFirebaseStorage, saveFilesToFirebase } from "../data/firebase";
+import { firebaseStorageApi } from "../data/firebase";
 
 export const exportToExcalidrawPlus = async (
   elements: readonly NonDeletedExcalidrawElement[],
@@ -35,7 +35,7 @@ export const exportToExcalidrawPlus = async (
   files: BinaryFiles,
   name: string,
 ) => {
-  const storage = await loadFirebaseStorage();
+  const storage = (await firebaseStorageApi.storageApi()) as FirebaseStorage;
 
   const id = `${nanoid(12)}`;
 
@@ -68,15 +68,10 @@ export const exportToExcalidrawPlus = async (
   }
 
   if (filesMap.size) {
-    const filesToUpload = await encodeFilesForUpload({
+    await firebaseStorageApi.saveFiles({
+      prefix: `/migrations/files/scenes/${id}`,
       files: filesMap,
       encryptionKey,
-      maxBytes: FILE_UPLOAD_MAX_BYTES,
-    });
-
-    await saveFilesToFirebase({
-      prefix: `/migrations/files/scenes/${id}`,
-      files: filesToUpload,
     });
   }
 
