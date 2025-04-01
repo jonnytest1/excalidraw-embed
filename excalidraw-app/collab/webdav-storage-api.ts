@@ -124,8 +124,10 @@ export const webdavStorageApi: StorageApi = {
             "blob",
           );
           const meta = await metaDataPr;
-          const fileMeta = meta[file];
-
+          const fileMeta = meta?.[file];
+          if (!fileMeta) {
+            throw new Error(" no meta for file");
+          }
           const dataUrl = await blobToDataUrl(fileCOntent);
 
           debugger;
@@ -174,7 +176,9 @@ export const webdavStorageApi: StorageApi = {
         "message" in (e as Error) &&
         (e as Error).message?.includes("No public access to this resource")
       ) {
+        window.startAuth();
       }
+      throw e;
     }
   },
   async saveFiles(opts) {

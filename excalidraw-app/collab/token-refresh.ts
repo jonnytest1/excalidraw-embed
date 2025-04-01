@@ -87,7 +87,7 @@ export class TokenRefresh {
 
   getToken() {
     if (this.validTo && this.validTo < Date.now()) {
-      debugger;
+      window.startAuth();
     }
     return this.currentToken!.access_token;
   }
