@@ -37,7 +37,7 @@ export interface StorageApi {
     encryptionKey: string;
   }): Promise<{ savedFiles: FileId[]; erroredFiles: FileId[] }>;
 
-  isSaved(portal: Portal, elements: readonly ExcalidrawElement[]): boolean;
+  allowUnload(portal: Portal, elements: readonly ExcalidrawElement[]): boolean;
 
   storageApi(): unknown;
 }

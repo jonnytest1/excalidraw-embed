@@ -335,6 +335,6 @@ export const firebaseStorageApi = {
   load: loadFromFirebase,
   save: saveToFirebase,
   saveFiles: saveFilesToFirebase,
-  isSaved: isSavedToFirebase,
+  allowUnload: isSavedToFirebase,
   storageApi: loadFirebaseStorage,
 } as StorageApi;

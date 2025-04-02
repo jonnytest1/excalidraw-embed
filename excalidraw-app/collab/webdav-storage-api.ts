@@ -1,7 +1,7 @@
 import { FileManager } from "../data/FileManager";
 
 import { TokenRefresh } from "./token-refresh";
-import { WebDav } from "./wevdav";
+import { StatusError, WebDav } from "./wevdav";
 
 import type { StorageApi } from "../data/storage-api";
 import type { ImportedDataState } from "../../packages/excalidraw/data/types";
@@ -88,10 +88,13 @@ const mimeTypeMap = {
   "application/octet-stream": ".bin",
 };
 
+let canSave = false;
+
+let unloadAllowed = true;
+
 export const webdavStorageApi: StorageApi = {
-  isSaved(portal, elements) {
-    debugger;
-    return false;
+  allowUnload(portal, elements) {
+    return unloadAllowed;
   },
   async load(roomId, roomKey, socket) {
     try {
@@ -101,8 +104,13 @@ export const webdavStorageApi: StorageApi = {
         `${encodeURIComponent(mainFile!)}`,
       );
       const data: ImportedDataState = JSON.parse(file);
+      canSave = true;
       return (data.elements as Array<SyncableExcalidrawElement>) ?? [];
     } catch (e) {
+      if (e instanceof StatusError && e.status === 404) {
+        // new file
+        canSave = true;
+      }
       debugger;
       throw e;
     }
@@ -157,6 +165,10 @@ export const webdavStorageApi: StorageApi = {
     };
   },
   async save(portal, elements, appState) {
+    if (!canSave) {
+      return [];
+    }
+
     try {
       const data = JSON.stringify({
         elements,
@@ -166,9 +178,10 @@ export const webdavStorageApi: StorageApi = {
         type: "excalidraw",
         version: 2,
       } as ImportedDataState);
-
+      unloadAllowed = false;
       const webdav = await webdavPr;
       await webdav.store(tokenRefresh.getToken(), data, `${mainFile}`);
+
       return [...elements];
     } catch (e) {
       if (
@@ -179,16 +192,19 @@ export const webdavStorageApi: StorageApi = {
         window.startAuth();
       }
       throw e;
+    } finally {
+      unloadAllowed = true;
     }
   },
   async saveFiles(opts) {
     const errored: Array<FileId> = [];
-    const saved: Array<FileId> = [];
+    const savedFiles: Array<FileId> = [];
     if (!opts.files.size) {
-      return { erroredFiles: errored, savedFiles: saved };
+      return { erroredFiles: errored, savedFiles };
     }
     const webdav = await webdavPr;
 
+    unloadAllowed = false;
     await Promise.all(
       [...opts.files.entries()].map(async ([file, data]) => {
         try {
@@ -207,14 +223,14 @@ export const webdavStorageApi: StorageApi = {
             id: data.id,
           });
           await webdav.setProp(tokenRefresh.getToken(), filePath, meta);
-          saved.push(file);
+          savedFiles.push(file);
         } catch (e) {
           errored.push(file);
         }
       }),
     );
-
-    return { erroredFiles: errored, savedFiles: saved };
+    unloadAllowed = true;
+    return { erroredFiles: errored, savedFiles };
   },
   storageApi() {
     return null;

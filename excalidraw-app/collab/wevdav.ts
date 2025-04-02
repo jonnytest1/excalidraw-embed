@@ -1,7 +1,15 @@
+import { s } from "../build/assets/Tableau10-B-NsZVaP";
+
 function xmlEscape(str: string) {
   const p = document.createElement("p");
   p.textContent = str;
   return p.innerHTML;
+}
+
+export class StatusError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
 }
 
 export class WebDav {
@@ -127,7 +135,7 @@ export class WebDav {
     });
     if (resp.status !== 200) {
       const data = await resp.text();
-      throw new Error(data);
+      throw new StatusError(resp.status, data);
     }
     if (type === "text") {
       const data = await resp.text();

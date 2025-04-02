@@ -141,21 +141,36 @@ export const isCollaborationLink = (link: string) => {
   return RE_COLLAB_LINK.test(hash);
 };
 
-export const getCollaborationLinkData = (link: string) => {
+export const getCollaborationLinkData = async (link: string) => {
   const url = new URL(link);
   if (url.searchParams.has("file")) {
     const file = url.searchParams.get("file");
     const buffer = new Uint8Array(ROOM_ID_BYTES);
     const keyBuffer = new Uint8Array(ENCRYPTION_KEY_BITS / 8);
+
+    if (!file?.length) {
+      debugger;
+      throw new Error("no file");
+    }
+
     derive(file!, buffer);
     derive(file!, keyBuffer);
 
-    return {
-      roomId: bytesToHexString(buffer),
-      roomKey: btoa(String.fromCharCode(...keyBuffer)) // Convert to base64
+    let roomId: string;
+    let roomKey: string;
+    do {
+      roomKey = btoa(String.fromCharCode(...keyBuffer)) // Convert to base64
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
-        .replace(/=+$/, ""),
+        .replace(/=+$/, "");
+      roomId = bytesToHexString(buffer);
+      console.log("0000");
+      await new Promise((res) => setTimeout(res, 1));
+    } while (roomId.startsWith("00"));
+
+    return {
+      roomId,
+      roomKey,
     };
   }
 
@@ -165,6 +180,9 @@ export const getCollaborationLinkData = (link: string) => {
     window.alert(t("alerts.invalidEncryptionKey"));
     return null;
   }
+  if (match?.[1].startsWith("00")) {
+    debugger;
+  }
   return match ? { roomId: match[1], roomKey: match[2] } : null;
 };
 
@@ -172,6 +190,11 @@ export const generateCollaborationLinkData = async () => {
   const url = new URL(location.href);
   if (url.searchParams.has("file")) {
     const file = url.searchParams.get("file");
+
+    if (!file?.length) {
+      debugger;
+      throw new Error("no file");
+    }
 
     const buffer = new Uint8Array(ROOM_ID_BYTES);
     const keyBuffer = new Uint8Array(ENCRYPTION_KEY_BITS / 8);
